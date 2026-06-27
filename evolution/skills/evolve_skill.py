@@ -75,12 +75,28 @@ def validate_evolved_skill(
     evolved_full: str,
     baseline_raw: str,
 ):
-    """Validate the complete reassembled evolved skill artifact."""
+    """Backward-compatible wrapper for older tests/callers."""
     return validate_skill_artifact(
         validator,
         artifact_full=evolved_full,
         baseline_full=baseline_raw,
     )
+
+
+def select_holdout_examples(holdout_examples: list, holdout_limit: Optional[int] = None) -> list:
+    """Return the holdout examples to score for this run.
+
+    Full holdout remains the default. Short report-only pilots can pass a small
+    limit to avoid spending the whole run budget in final evaluation.
+    """
+    if holdout_limit is None or holdout_limit <= 0:
+        return holdout_examples
+    return holdout_examples[:holdout_limit]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main Evolution Pipeline
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def evolve(
@@ -93,6 +109,7 @@ def evolve(
     hermes_repo: Optional[str] = None,
     run_tests: bool = False,
     dry_run: bool = False,
+    holdout_limit: Optional[int] = None,
 ):
     """Main evolution function — orchestrates the full optimization loop."""
 
@@ -125,6 +142,8 @@ def evolve(
         console.print(f"  Eval/dataset model: {eval_model}")
         console.print(f"  Would generate eval dataset (source: {eval_source})")
         console.print(f"  Would run GEPA optimization ({iterations} iterations)")
+        if holdout_limit:
+            console.print(f"  Would limit holdout evaluation to {holdout_limit} examples")
         console.print(f"  Would validate constraints and create PR")
         return
 
@@ -262,7 +281,9 @@ def evolve(
     # ── 8. Evaluate on holdout set ──────────────────────────────────────
     console.print(f"\n[bold]Evaluating on holdout set ({len(dataset.holdout)} examples)[/bold]")
 
-    holdout_examples = dataset.to_dspy_examples("holdout")
+    holdout_examples = select_holdout_examples(dataset.to_dspy_examples("holdout"), holdout_limit)
+    if holdout_limit:
+        console.print(f"  Using {len(holdout_examples)}/{len(dataset.holdout)} holdout examples for this pilot run")
 
     baseline_scores = []
     evolved_scores = []
@@ -359,7 +380,8 @@ def evolve(
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--run-tests", is_flag=True, help="Run full pytest suite as constraint gate")
 @click.option("--dry-run", is_flag=True, help="Validate setup without running optimization")
-def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run):
+@click.option("--holdout-limit", default=None, type=int, help="Limit holdout examples for short pilot runs")
+def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_model, hermes_repo, run_tests, dry_run, holdout_limit):
     """Evolve a Hermes Agent skill using DSPy + GEPA optimization."""
     evolve(
         skill_name=skill,
@@ -371,6 +393,7 @@ def main(skill, iterations, eval_source, dataset_path, optimizer_model, eval_mod
         hermes_repo=hermes_repo,
         run_tests=run_tests,
         dry_run=dry_run,
+        holdout_limit=holdout_limit,
     )
 
 

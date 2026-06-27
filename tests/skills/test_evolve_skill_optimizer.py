@@ -98,3 +98,14 @@ def test_validate_evolved_skill_keeps_backwards_compatible_wrapper():
     )
 
     assert all(result.passed for result in results)
+
+
+def test_select_holdout_examples_limits_only_when_requested():
+    from evolution.skills.evolve_skill import select_holdout_examples
+
+    examples = ["a", "b", "c"]
+
+    assert select_holdout_examples(examples) == examples
+    assert select_holdout_examples(examples, None) == examples
+    assert select_holdout_examples(examples, 0) == examples
+    assert select_holdout_examples(examples, 2) == ["a", "b"]

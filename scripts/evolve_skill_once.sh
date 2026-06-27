@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SKILL="${1:?usage: scripts/evolve_skill_once.sh <skill> [iterations] [eval_source] [optimizer_model] [eval_model]}"
+SKILL="${1:?usage: scripts/evolve_skill_once.sh <skill> [iterations] [eval_source] [optimizer_model] [eval_model] [holdout_limit]}"
 ITERATIONS="${2:-3}"
 EVAL_SOURCE="${3:-synthetic}"
 OPTIMIZER_MODEL="${4:-openai/gpt-5-mini}"
 EVAL_MODEL="${5:-openai/gpt-5-nano}"
+HOLDOUT_LIMIT="${6:-}"
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
@@ -57,9 +58,16 @@ source .venv/bin/activate
 
 export HERMES_AGENT_REPO="${HERMES_AGENT_REPO:-/Users/rikukudo/.hermes/hermes-agent}"
 
-python -m evolution.skills.evolve_skill \
-  --skill "$SKILL" \
-  --iterations "$ITERATIONS" \
-  --eval-source "$EVAL_SOURCE" \
-  --optimizer-model "$OPTIMIZER_MODEL" \
+ARGS=(
+  --skill "$SKILL"
+  --iterations "$ITERATIONS"
+  --eval-source "$EVAL_SOURCE"
+  --optimizer-model "$OPTIMIZER_MODEL"
   --eval-model "$EVAL_MODEL"
+)
+
+if [[ -n "$HOLDOUT_LIMIT" ]]; then
+  ARGS+=(--holdout-limit "$HOLDOUT_LIMIT")
+fi
+
+python -m evolution.skills.evolve_skill "${ARGS[@]}"
