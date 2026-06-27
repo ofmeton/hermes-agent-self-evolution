@@ -1,0 +1,50 @@
+version: 1
+repo:
+  hermes_agent_repo: /Users/rikukudo/.hermes/hermes-agent
+  self_evolution_repo: /Users/rikukudo/Projects/hermes-agent-self-evolution
+
+defaults:
+  optimizer_model: openai/gpt-5-mini
+  eval_model: openai/gpt-5-nano
+  iterations: 3
+  eval_source: synthetic
+  max_estimated_cost_usd: 0.25
+  min_improvement: 0.03
+  max_size_growth_chars: 1500
+  require_constraints_passed: true
+  mode: report_only
+
+targets:
+  - skill: github-code-review
+    enabled: true
+    cadence: biweekly
+    priority: 10
+    max_estimated_cost_usd: 0.25
+    notes: High ROI; diff/review quality is easy to inspect.
+
+  - skill: systematic-debugging
+    enabled: true
+    cadence: monthly
+    priority: 9
+    max_estimated_cost_usd: 0.25
+    notes: High leverage for dev work; review diff carefully for process bloat.
+
+  - skill: hermes-agent
+    enabled: false
+    cadence: monthly
+    priority: 7
+    iterations: 1
+    max_estimated_cost_usd: 0.20
+    notes: Broad impact and long skill; keep disabled until smaller skills prove stable.
+
+  - skill: google-workspace
+    enabled: false
+    cadence: monthly
+    priority: 6
+    notes: External API behavior needs a better golden dataset before automation.
+
+  - skill: gmail-organization
+    enabled: false
+    cadence: monthly
+    priority: 6
+    notes: Useful for secretary workflow; requires privacy-safe eval dataset.

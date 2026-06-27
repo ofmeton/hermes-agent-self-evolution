@@ -19,6 +19,13 @@ datasets/**/*.json
 snapshots/
 *.pkl
 
+# GEPA run outputs are generated and may include private/local evaluation data.
+output/
+reports/evolution-runs/
+
+# Local private eval datasets should not be committed unless explicitly sanitized.
+.hermes/private-eval-data/
+
 # IDE
 .idea/
 .vscode/
