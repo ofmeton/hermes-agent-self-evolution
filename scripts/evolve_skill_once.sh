@@ -15,6 +15,43 @@ if [[ ! -f ".venv/bin/activate" ]]; then
   exit 2
 fi
 
+load_env_file() {
+  local env_file="$1"
+  [[ -f "$env_file" ]] || return 0
+
+  local line key value
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    line="${line%$'\r'}"
+    [[ -z "${line//[[:space:]]/}" ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+    [[ "$line" == export\ * ]] && line="${line#export }"
+    [[ "$line" == *=* ]] || continue
+
+    key="${line%%=*}"
+    key="${key#"${key%%[![:space:]]*}"}"
+    key="${key%"${key##*[![:space:]]}"}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+
+    # Do not overwrite an explicit environment variable from the caller.
+    [[ -n "${!key+x}" ]] && continue
+
+    value="${line#*=}"
+    value="${value%$'\r'}"
+    if [[ "$value" == \"*\" && "$value" == *\" ]]; then
+      value="${value:1:${#value}-2}"
+    elif [[ "$value" == \'*\' && "$value" == *\' ]]; then
+      value="${value:1:${#value}-2}"
+    fi
+    export "$key=$value"
+  done < "$env_file"
+}
+
+# Load local/project env first, then Hermes profile env. Existing exported
+# values always win, so ad-hoc per-run overrides remain safe.
+load_env_file "$ROOT/.env"
+HERMES_HOME="${HERMES_HOME:-$HOME/.hermes}"
+load_env_file "$HERMES_HOME/.env"
+
 # shellcheck source=/dev/null
 source .venv/bin/activate
 
