@@ -29,6 +29,16 @@ targets:
     max_estimated_cost_usd: 0.25
     notes: High leverage for dev work; review diff carefully for process bloat.
 
+  - skill: session-retrospective
+    enabled: true
+    cadence: manual
+    priority: 8
+    iterations: 1
+    holdout_limit: 2
+    hermes_agent_repo: /Users/rikukudo/Projects/private-agents/all-good-ops/.claude
+    max_estimated_cost_usd: 0.15
+    notes: Claude/user-authored local skill; likely higher ROI than polished hub skills. Pilot with limited holdout first.
+
   - skill: hermes-agent
     enabled: false
     cadence: monthly

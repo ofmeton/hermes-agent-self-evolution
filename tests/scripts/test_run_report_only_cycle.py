@@ -1,6 +1,8 @@
 import importlib.util
 from pathlib import Path
 
+import yaml
+
 
 def load_cycle_module():
     path = Path(__file__).parents[2] / "scripts" / "run_report_only_cycle.py"
@@ -41,3 +43,57 @@ def test_build_failed_variant_summary_when_no_completed_run_exists(tmp_path):
     assert "Status: **reject**" in markdown
     assert "evolved_FAILED.md" in markdown
     assert "No completed `metrics.json` run directory was produced" in markdown
+
+
+def test_run_cycle_passes_target_repo_and_holdout_limit(tmp_path, monkeypatch):
+    cycle = load_cycle_module()
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "evolution_targets.yaml").write_text(yaml.safe_dump({
+        "defaults": {
+            "optimizer_model": "openai/gpt-5-mini",
+            "eval_model": "openai/gpt-5-nano",
+            "eval_source": "synthetic",
+            "iterations": 3,
+        },
+        "targets": [{
+            "skill": "session-retrospective",
+            "enabled": True,
+            "priority": 10,
+            "iterations": 1,
+            "holdout_limit": 2,
+            "hermes_agent_repo": "/tmp/custom/.claude",
+        }],
+    }))
+    script = tmp_path / "scripts" / "evolve_skill_once.sh"
+    script.parent.mkdir()
+    script.write_text("#!/usr/bin/env bash\n")
+    failed = tmp_path / "output" / "session-retrospective" / "evolved_FAILED.md"
+    failed.parent.mkdir(parents=True)
+    failed.write_text("---\nname: session-retrospective\ndescription: Demo\n---\n\n# Demo")
+
+    calls = []
+
+    def fake_run(command, cwd, env, check):
+        calls.append({"command": command, "cwd": cwd, "env": env, "check": check})
+
+    monkeypatch.setattr(cycle.subprocess, "run", fake_run)
+
+    class FakeSummaryModule:
+        @staticmethod
+        def find_latest_run(root, skill):
+            raise FileNotFoundError
+
+    monkeypatch.setattr(cycle, "_load_summary_module", lambda root: FakeSummaryModule)
+
+    cycle.run_cycle(tmp_path, skill="session-retrospective", dry_run=False)
+
+    assert calls[0]["command"][-1] == "2"
+    assert calls[0]["command"][1:6] == [
+        "session-retrospective",
+        "1",
+        "synthetic",
+        "openai/gpt-5-mini",
+        "openai/gpt-5-nano",
+    ]
+    assert calls[0]["env"]["HERMES_AGENT_REPO"] == "/tmp/custom/.claude"

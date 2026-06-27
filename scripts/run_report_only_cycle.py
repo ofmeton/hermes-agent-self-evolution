@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import importlib.util
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -68,20 +69,26 @@ def run_cycle(root: Path, skill: str | None = None, dry_run: bool = False) -> Pa
     eval_source = str(target.get("eval_source", defaults.get("eval_source", "synthetic")))
     optimizer_model = str(target.get("optimizer_model", defaults.get("optimizer_model", "openai/gpt-5-mini")))
     eval_model = str(target.get("eval_model", defaults.get("eval_model", "openai/gpt-5-nano")))
+    holdout_limit = target.get("holdout_limit", defaults.get("holdout_limit"))
+    hermes_agent_repo = target.get("hermes_agent_repo", config.get("repo", {}).get("hermes_agent_repo"))
+
+    command = [
+        str(root / "scripts" / "evolve_skill_once.sh"),
+        selected_skill,
+        iterations,
+        eval_source,
+        optimizer_model,
+        eval_model,
+    ]
+    if holdout_limit:
+        command.append(str(holdout_limit))
+
+    env = os.environ.copy()
+    if hermes_agent_repo:
+        env["HERMES_AGENT_REPO"] = str(hermes_agent_repo)
 
     if not dry_run:
-        subprocess.run(
-            [
-                str(root / "scripts" / "evolve_skill_once.sh"),
-                selected_skill,
-                iterations,
-                eval_source,
-                optimizer_model,
-                eval_model,
-            ],
-            cwd=root,
-            check=True,
-        )
+        subprocess.run(command, cwd=root, env=env, check=True)
 
     summary_module = _load_summary_module(root)
     try:
