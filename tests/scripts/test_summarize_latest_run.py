@@ -13,11 +13,12 @@ def load_summary_module():
     return module
 
 
-def write_run(root: Path, skill: str, timestamp: str, improvement: float):
+def write_run(root: Path, skill: str, timestamp: str, improvement: float, changed: bool = True):
     run_dir = root / "output" / skill / timestamp
     run_dir.mkdir(parents=True)
     (run_dir / "baseline_skill.md").write_text("# Base\nOld text\n")
-    (run_dir / "evolved_skill.md").write_text("# Base\nNew text\n")
+    evolved_text = "# Base\nNew text\n" if changed else "# Base\nOld text\n"
+    (run_dir / "evolved_skill.md").write_text(evolved_text)
     (run_dir / "metrics.json").write_text(json.dumps({
         "skill_name": skill,
         "timestamp": timestamp,
@@ -48,3 +49,11 @@ def test_build_summary_contains_models_and_recommendation(tmp_path):
     assert "openai/gpt-5-mini" in result["markdown"]
     assert "openai/gpt-5-nano" in result["markdown"]
     assert result["gate"]["status"] == "candidate"
+
+
+def test_build_summary_rejects_score_gain_without_artifact_change(tmp_path):
+    summary = load_summary_module()
+    run_dir = write_run(tmp_path, "demo", "20260201_000000", 0.13, changed=False)
+    result = summary.build_summary(run_dir)
+    assert result["gate"]["status"] == "reject"
+    assert "artifact_unchanged" in result["markdown"]

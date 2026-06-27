@@ -55,3 +55,19 @@ def test_review_when_small_positive_improvement():
         thresholds={"min_improvement": 0.03, "max_size_growth_chars": 1500},
     )
     assert result["status"] == "review"
+
+
+def test_reject_when_artifact_did_not_change_even_if_score_improved():
+    gate = load_gate_module()
+    result = gate.classify_candidate(
+        metrics={
+            "improvement": 0.13,
+            "baseline_size": 10000,
+            "evolved_size": 10000,
+            "constraints_passed": True,
+            "artifact_changed": False,
+        },
+        thresholds={"min_improvement": 0.03, "max_size_growth_chars": 1500},
+    )
+    assert result["status"] == "reject"
+    assert "artifact_unchanged" in result["reasons"]

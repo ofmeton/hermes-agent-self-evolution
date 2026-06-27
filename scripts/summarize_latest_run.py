@@ -42,8 +42,12 @@ def _diff_stats(run_dir: Path) -> dict[str, int]:
 
 def build_summary(run_dir: Path, thresholds: dict[str, Any] | None = None) -> dict[str, Any]:
     metrics = json.loads((run_dir / "metrics.json").read_text())
-    gate = _load_gate_module().classify_candidate(metrics, thresholds)
     diff_stats = _diff_stats(run_dir)
+    enriched_metrics = {
+        **metrics,
+        "artifact_changed": bool(diff_stats["added_lines"] or diff_stats["removed_lines"]),
+    }
+    gate = _load_gate_module().classify_candidate(enriched_metrics, thresholds)
 
     markdown = f"""# Evolution Run Summary — {metrics.get('skill_name')}
 

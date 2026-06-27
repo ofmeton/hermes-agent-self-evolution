@@ -19,9 +19,12 @@ def classify_candidate(metrics: dict[str, Any], thresholds: dict[str, Any] | Non
     evolved_size = int(metrics.get("evolved_size", 0))
     size_growth = evolved_size - baseline_size
     constraints_passed = bool(metrics.get("constraints_passed", False))
+    artifact_changed = metrics.get("artifact_changed")
 
     reasons: list[str] = []
 
+    if artifact_changed is False:
+        reasons.append("artifact_unchanged")
     if not constraints_passed:
         reasons.append("constraints_failed")
     if size_growth > max_size_growth:
