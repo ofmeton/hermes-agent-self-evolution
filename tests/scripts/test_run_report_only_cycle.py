@@ -28,3 +28,16 @@ def test_report_path_is_date_and_skill_scoped(tmp_path):
     cycle = load_cycle_module()
     path = cycle.report_path(tmp_path, "github-code-review", "2026-06-27")
     assert path == tmp_path / "reports" / "evolution-runs" / "2026-06-27" / "github-code-review" / "summary.md"
+
+
+def test_build_failed_variant_summary_when_no_completed_run_exists(tmp_path):
+    cycle = load_cycle_module()
+    failed = tmp_path / "output" / "demo" / "evolved_FAILED.md"
+    failed.parent.mkdir(parents=True)
+    failed.write_text("---\nname: demo\ndescription: Demo\n---\n\n# Demo")
+
+    markdown = cycle.build_failed_variant_summary(tmp_path, "demo")
+
+    assert "Status: **reject**" in markdown
+    assert "evolved_FAILED.md" in markdown
+    assert "No completed `metrics.json` run directory was produced" in markdown

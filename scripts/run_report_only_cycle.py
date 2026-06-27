@@ -30,6 +30,23 @@ def report_path(root: Path, skill: str, date: str) -> Path:
     return root / "reports" / "evolution-runs" / date / skill / "summary.md"
 
 
+def build_failed_variant_summary(root: Path, skill: str) -> str:
+    failed_path = root / "output" / skill / "evolved_FAILED.md"
+    if not failed_path.exists():
+        raise FileNotFoundError(f"No completed run or failed variant for skill: {skill}")
+    return f"""# Evolution Run Summary — {skill}
+
+- Run dir: `output/{skill}`
+- Status: **reject**
+- Failed artifact: `{failed_path}`
+- Reason: No completed `metrics.json` run directory was produced. The GEPA run saved an `evolved_FAILED.md` artifact instead.
+
+## Next action
+
+Do not apply this variant. Inspect the failed artifact only if debugging the evolution pipeline.
+"""
+
+
 def _load_summary_module(root: Path):
     summary_path = root / "scripts" / "summarize_latest_run.py"
     spec = importlib.util.spec_from_file_location("summarize_latest_run", summary_path)
@@ -67,13 +84,16 @@ def run_cycle(root: Path, skill: str | None = None, dry_run: bool = False) -> Pa
         )
 
     summary_module = _load_summary_module(root)
-    run_dir = summary_module.find_latest_run(root, selected_skill)
-    summary = summary_module.build_summary(run_dir, thresholds=defaults)
+    try:
+        run_dir = summary_module.find_latest_run(root, selected_skill)
+        markdown = summary_module.build_summary(run_dir, thresholds=defaults)["markdown"]
+    except FileNotFoundError:
+        markdown = build_failed_variant_summary(root, selected_skill)
 
     today = dt.date.today().isoformat()
     out_path = report_path(root, selected_skill, today)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(summary["markdown"])
+    out_path.write_text(markdown)
     return out_path
 
 

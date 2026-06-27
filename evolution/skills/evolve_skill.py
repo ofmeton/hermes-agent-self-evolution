@@ -61,6 +61,19 @@ def build_gepa_optimizer(iterations: int, optimizer_model: str):
     )
 
 
+def validate_evolved_skill(
+    validator: ConstraintValidator,
+    evolved_full: str,
+    baseline_raw: str,
+):
+    """Validate the complete reassembled skill artifact.
+
+    GEPA mutates the markdown body, but skill structural constraints apply to
+    the full SKILL.md file including YAML frontmatter.
+    """
+    return validator.validate_all(evolved_full, "skill", baseline_text=baseline_raw)
+
+
 def evolve(
     skill_name: str,
     iterations: int = 3,
@@ -215,7 +228,11 @@ def evolve(
 
     # ── 7. Validate evolved skill ───────────────────────────────────────
     console.print(f"\n[bold]Validating evolved skill[/bold]")
-    evolved_constraints = validator.validate_all(evolved_body, "skill", baseline_text=skill["body"])
+    evolved_constraints = validate_evolved_skill(
+        validator,
+        evolved_full=evolved_full,
+        baseline_raw=skill["raw"],
+    )
     all_pass = True
     for c in evolved_constraints:
         icon = "✓" if c.passed else "✗"

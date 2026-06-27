@@ -54,3 +54,31 @@ def test_gepa_metric_adapter_accepts_current_dspy_signature():
     score = gepa_skill_fitness_metric(example, prediction, None, "output", None)
 
     assert 0.0 <= score <= 1.0
+
+
+def test_validate_evolved_skill_checks_reassembled_frontmatter():
+    """Constraint validation must inspect the full SKILL.md, not just body text.
+
+    GEPA optimizes the body, but the structural skill constraint requires YAML
+    frontmatter. A valid reassembled skill should not be rejected as missing
+    frontmatter.
+    """
+    from evolution.core.config import EvolutionConfig
+    from evolution.core.constraints import ConstraintValidator
+    from evolution.skills.evolve_skill import validate_evolved_skill
+
+    validator = ConstraintValidator(EvolutionConfig())
+    full_skill = "---\nname: demo\ndescription: Demo skill\n---\n\n# Demo\nDo the thing."
+    body_only = "# Demo\nDo the thing."
+
+    results = validate_evolved_skill(
+        validator,
+        evolved_full=full_skill,
+        baseline_raw=full_skill,
+    )
+
+    assert all(result.passed for result in results)
+    assert not all(
+        result.passed
+        for result in validator.validate_all(body_only, "skill", baseline_text=body_only)
+    )
