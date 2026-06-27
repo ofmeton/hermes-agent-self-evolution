@@ -33,13 +33,41 @@ from evolution.skills.skill_module import (
 console = Console()
 
 
+DEFAULT_OPTIMIZER_MODEL = "openai/gpt-5-mini"
+DEFAULT_EVAL_MODEL = "openai/gpt-5-nano"
+
+
+def gepa_skill_fitness_metric(example, prediction, trace=None, pred_name=None, pred_trace=None) -> float:
+    """Adapter for DSPy's current GEPA metric signature.
+
+    The existing skill_fitness_metric is the project's scoring behavior. DSPy
+    GEPA now calls metrics with five arguments, so keep scoring centralized and
+    adapt only the call shape here.
+    """
+    return skill_fitness_metric(example, prediction, trace)
+
+
+def build_gepa_optimizer(iterations: int, optimizer_model: str):
+    """Build a GEPA optimizer using the requested reflection model.
+
+    Evaluation/model calls still use the globally configured DSPy LM. GEPA's
+    reflection/mutation calls use this stronger optimizer model.
+    """
+    reflection_lm = dspy.LM(optimizer_model)
+    return dspy.GEPA(
+        metric=gepa_skill_fitness_metric,
+        max_full_evals=iterations,
+        reflection_lm=reflection_lm,
+    )
+
+
 def evolve(
     skill_name: str,
-    iterations: int = 10,
+    iterations: int = 3,
     eval_source: str = "synthetic",
     dataset_path: Optional[str] = None,
-    optimizer_model: str = "openai/gpt-4.1",
-    eval_model: str = "openai/gpt-4.1-mini",
+    optimizer_model: str = DEFAULT_OPTIMIZER_MODEL,
+    eval_model: str = DEFAULT_EVAL_MODEL,
     hermes_repo: Optional[str] = None,
     run_tests: bool = False,
     dry_run: bool = False,
@@ -71,6 +99,8 @@ def evolve(
 
     if dry_run:
         console.print(f"\n[bold green]DRY RUN — setup validated successfully.[/bold green]")
+        console.print(f"  Optimizer model: {optimizer_model}")
+        console.print(f"  Eval/dataset model: {eval_model}")
         console.print(f"  Would generate eval dataset (source: {eval_source})")
         console.print(f"  Would run GEPA optimization ({iterations} iterations)")
         console.print(f"  Would validate constraints and create PR")
@@ -153,9 +183,9 @@ def evolve(
     start_time = time.time()
 
     try:
-        optimizer = dspy.GEPA(
-            metric=skill_fitness_metric,
-            max_steps=iterations,
+        optimizer = build_gepa_optimizer(
+            iterations=iterations,
+            optimizer_model=optimizer_model,
         )
 
         optimized_module = optimizer.compile(
@@ -294,12 +324,12 @@ def evolve(
 
 @click.command()
 @click.option("--skill", required=True, help="Name of the skill to evolve")
-@click.option("--iterations", default=10, help="Number of GEPA iterations")
+@click.option("--iterations", default=3, show_default=True, help="Number of GEPA full-evaluation passes")
 @click.option("--eval-source", default="synthetic", type=click.Choice(["synthetic", "golden", "sessiondb"]),
               help="Source for evaluation dataset")
 @click.option("--dataset-path", default=None, help="Path to existing eval dataset (JSONL)")
-@click.option("--optimizer-model", default="openai/gpt-4.1", help="Model for GEPA reflections")
-@click.option("--eval-model", default="openai/gpt-4.1-mini", help="Model for evaluations")
+@click.option("--optimizer-model", default=DEFAULT_OPTIMIZER_MODEL, show_default=True, help="Model for GEPA reflections")
+@click.option("--eval-model", default=DEFAULT_EVAL_MODEL, show_default=True, help="Model for evaluations and dataset generation")
 @click.option("--hermes-repo", default=None, help="Path to hermes-agent repo")
 @click.option("--run-tests", is_flag=True, help="Run full pytest suite as constraint gate")
 @click.option("--dry-run", is_flag=True, help="Validate setup without running optimization")

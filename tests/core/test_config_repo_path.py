@@ -99,3 +99,25 @@ def test_cli_dry_run_honors_explicit_repo(tmp_path, monkeypatch):
     assert result.exit_code == 0, result.output
     assert "DRY RUN" in result.output
     assert "Cannot find hermes-agent repo" not in result.output
+
+
+def test_cli_dry_run_defaults_to_low_cost_gpt5_mini_and_nano(tmp_path, monkeypatch):
+    """The default GEPA cost profile should use cheap evaluation calls and a
+    modest reflection model: GPT-5 Nano for eval/dataset and GPT-5 Mini for
+    optimizer/reflection. Dry-run output exposes the resolved defaults so a
+    run can be cost-checked before spending API credits."""
+    from evolution.skills.evolve_skill import main
+
+    monkeypatch.delenv("HERMES_AGENT_REPO", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path / "empty"))
+    repo = _make_skill_repo(tmp_path)
+
+    result = CliRunner().invoke(
+        main,
+        ["--skill", "demo", "--hermes-repo", str(repo), "--dry-run"],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert "Optimizer model: openai/gpt-5-mini" in result.output
+    assert "Eval/dataset model: openai/gpt-5-nano" in result.output
+    assert "Would run GEPA optimization (3 iterations)" in result.output
