@@ -61,17 +61,26 @@ def build_gepa_optimizer(iterations: int, optimizer_model: str):
     )
 
 
+def validate_skill_artifact(
+    validator: ConstraintValidator,
+    artifact_full: str,
+    baseline_full: Optional[str] = None,
+):
+    """Validate the complete SKILL.md artifact, including frontmatter."""
+    return validator.validate_all(artifact_full, "skill", baseline_text=baseline_full)
+
+
 def validate_evolved_skill(
     validator: ConstraintValidator,
     evolved_full: str,
     baseline_raw: str,
 ):
-    """Validate the complete reassembled skill artifact.
-
-    GEPA mutates the markdown body, but skill structural constraints apply to
-    the full SKILL.md file including YAML frontmatter.
-    """
-    return validator.validate_all(evolved_full, "skill", baseline_text=baseline_raw)
+    """Validate the complete reassembled evolved skill artifact."""
+    return validate_skill_artifact(
+        validator,
+        artifact_full=evolved_full,
+        baseline_full=baseline_raw,
+    )
 
 
 def evolve(
@@ -161,7 +170,7 @@ def evolve(
     # ── 3. Validate constraints on baseline ─────────────────────────────
     console.print(f"\n[bold]Validating baseline constraints[/bold]")
     validator = ConstraintValidator(config)
-    baseline_constraints = validator.validate_all(skill["body"], "skill")
+    baseline_constraints = validate_skill_artifact(validator, skill["raw"])
     all_pass = True
     for c in baseline_constraints:
         icon = "✓" if c.passed else "✗"
