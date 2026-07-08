@@ -5,6 +5,7 @@ Usage:
     python -m evolution.skills.evolve_skill --skill arxiv --eval-source golden --dataset datasets/skills/arxiv/
 """
 
+import io
 import json
 import sys
 import time
@@ -92,6 +93,82 @@ def select_holdout_examples(holdout_examples: list, holdout_limit: Optional[int]
     if holdout_limit is None or holdout_limit <= 0:
         return holdout_examples
     return holdout_examples[:holdout_limit]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# GEPA Proposal Capture Utilities
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class _TeeCapture:
+    """Tee stream that writes to both the original stream and an internal buffer.
+
+    Used during GEPA compile() to capture stdout/stderr for proposal extraction
+    without suppressing visible progress output. Caps at MAX_BYTES to prevent
+    memory blow from long optimization runs.
+    """
+    MAX_BYTES = 200_000
+
+    def __init__(self, original):
+        self.original = original
+        self._buf = io.StringIO()
+        self._bytes_written = 0
+
+    def write(self, s: str) -> int:
+        self.original.write(s)
+        if self._bytes_written < self.MAX_BYTES:
+            remaining = self.MAX_BYTES - self._bytes_written
+            written = self._buf.write(s[:remaining])
+            self._bytes_written += written
+        return len(s)
+
+    def flush(self):
+        self.original.flush()
+
+    def getvalue(self) -> str:
+        return self._buf.getvalue()
+
+    @property
+    def encoding(self):
+        return getattr(self.original, 'encoding', 'utf-8')
+
+
+PROPOSAL_HEADER = "Proposed new text for predictor.predict:"
+MAX_PROPOSAL_CAPTURE = 20
+
+
+def extract_proposals(captured_text: str) -> list[str]:
+    """Extract unique GEPA proposal bodies from captured stdout/stderr.
+
+    GEPA logs proposed instruction changes during compile() as::
+
+        Proposed new text for predictor.predict:
+        <the proposed markdown instruction text>
+        ---
+        Score: 0.750 | Size: 5,432 chars
+
+    Returns up to MAX_PROPOSAL_CAPTURE deduplicated proposals.
+    """
+    proposals: list[str] = []
+    seen: set[str] = set()
+
+    for block in captured_text.split(PROPOSAL_HEADER)[1:]:
+        lines = block.split("\n")
+        content_lines: list[str] = []
+        for line in lines:
+            stripped = line.strip()
+            if stripped.startswith("Score:") or stripped == "---":
+                break
+            content_lines.append(line)
+
+        text = "\n".join(content_lines).strip()
+        if text and text not in seen:
+            seen.add(text)
+            proposals.append(text)
+            if len(proposals) >= MAX_PROPOSAL_CAPTURE:
+                break
+
+    return proposals
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -222,6 +299,7 @@ def evolve(
     console.print(f"\n[bold cyan]Running GEPA optimization ({iterations} iterations)...[/bold cyan]\n")
 
     start_time = time.time()
+    proposals: list[str] = []
 
     try:
         optimizer = build_gepa_optimizer(
@@ -229,11 +307,30 @@ def evolve(
             optimizer_model=optimizer_model,
         )
 
-        optimized_module = optimizer.compile(
-            baseline_module,
-            trainset=trainset,
-            valset=valset,
-        )
+        # Capture GEPA stdout/stderr to extract non-selected proposals
+        stdout_capture = _TeeCapture(sys.__stdout__)
+        stderr_capture = _TeeCapture(sys.__stderr__)
+
+        tmp_stdout = sys.stdout
+        tmp_stderr = sys.stderr
+        sys.stdout = stdout_capture
+        sys.stderr = stderr_capture
+
+        try:
+            optimized_module = optimizer.compile(
+                baseline_module,
+                trainset=trainset,
+                valset=valset,
+            )
+        finally:
+            sys.stdout = tmp_stdout
+            sys.stderr = tmp_stderr
+
+        captured_text = stdout_capture.getvalue() + "\n" + stderr_capture.getvalue()
+        proposals = extract_proposals(captured_text)
+        if proposals:
+            console.print(f"  [dim]Captured {len(proposals)} non-selected GEPA proposals to candidates/[/dim]")
+
     except Exception as e:
         # Fall back to MIPROv2 if GEPA isn't available in this DSPy version
         console.print(f"[yellow]GEPA not available ({e}), falling back to MIPROv2[/yellow]")
@@ -339,6 +436,14 @@ def evolve(
     # Save baseline for comparison
     (output_dir / "baseline_skill.md").write_text(skill["raw"])
 
+    # Save non-selected GEPA proposals for human review
+    candidates_dir: Optional[Path] = None
+    if proposals:
+        candidates_dir = output_dir / "candidates"
+        candidates_dir.mkdir(parents=True, exist_ok=True)
+        for i, proposal in enumerate(proposals, 1):
+            (candidates_dir / f"candidate_{i:03d}.md").write_text(proposal)
+
     # Save metrics
     metrics = {
         "skill_name": skill_name,
@@ -356,7 +461,10 @@ def evolve(
         "holdout_examples": len(dataset.holdout),
         "elapsed_seconds": elapsed,
         "constraints_passed": all_pass,
+        "candidate_count": len(proposals),
     }
+    if candidates_dir:
+        metrics["candidates_dir"] = str(candidates_dir)
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2))
 
     console.print(f"\n  Output saved to {output_dir}/")

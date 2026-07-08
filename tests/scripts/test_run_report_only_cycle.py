@@ -97,3 +97,86 @@ def test_run_cycle_passes_target_repo_and_holdout_limit(tmp_path, monkeypatch):
         "openai/gpt-5-nano",
     ]
     assert calls[0]["env"]["HERMES_AGENT_REPO"] == "/tmp/custom/.claude"
+
+
+def test_run_cycle_imports_completed_run_as_v0_experiment(tmp_path, monkeypatch):
+    cycle = load_cycle_module()
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "evolution_targets.yaml").write_text(yaml.safe_dump({
+        "defaults": {},
+        "targets": [{"skill": "stop-slop", "enabled": True, "priority": 10, "iterations": 1}],
+    }))
+    script = tmp_path / "scripts" / "evolve_skill_once.sh"
+    script.parent.mkdir()
+    script.write_text("#!/usr/bin/env bash\n")
+    run_dir = tmp_path / "output" / "stop-slop" / "20260628_233149"
+    run_dir.mkdir(parents=True)
+    (run_dir / "baseline_skill.md").write_text("base")
+    (run_dir / "evolved_skill.md").write_text("evolved")
+    (run_dir / "metrics.json").write_text('{"skill_name":"stop-slop","timestamp":"20260628_233149","baseline_score":0.4,"evolved_score":0.5}')
+
+    monkeypatch.setattr(cycle.subprocess, "run", lambda *args, **kwargs: None)
+
+    class FakeSummaryModule:
+        @staticmethod
+        def find_latest_run(root, skill):
+            return run_dir
+
+        @staticmethod
+        def build_summary(run_dir_arg, thresholds=None):
+            return {"markdown": "# Summary\n"}
+
+    monkeypatch.setattr(cycle, "_load_summary_module", lambda root: FakeSummaryModule)
+
+    report = cycle.run_cycle(tmp_path, skill="stop-slop", dry_run=False)
+    markdown = report.read_text()
+
+    experiments = list((tmp_path / "output" / "experiments").iterdir())
+    assert len(experiments) == 1
+    assert (experiments[0] / "experiment.json").exists()
+    assert "Self-improvement Loop v0" in markdown
+    assert experiments[0].name in markdown
+
+
+def test_run_cycle_keeps_summary_when_v0_import_fails(tmp_path, monkeypatch):
+    cycle = load_cycle_module()
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    (config_dir / "evolution_targets.yaml").write_text(yaml.safe_dump({
+        "defaults": {},
+        "targets": [{"skill": "stop-slop", "enabled": True, "priority": 10, "iterations": 1}],
+    }))
+    script = tmp_path / "scripts" / "evolve_skill_once.sh"
+    script.parent.mkdir()
+    script.write_text("#!/usr/bin/env bash\n")
+    run_dir = tmp_path / "output" / "stop-slop" / "20260628_233149"
+    run_dir.mkdir(parents=True)
+
+    monkeypatch.setattr(cycle.subprocess, "run", lambda *args, **kwargs: None)
+
+    class FakeSummaryModule:
+        @staticmethod
+        def find_latest_run(root, skill):
+            return run_dir
+
+        @staticmethod
+        def build_summary(run_dir_arg, thresholds=None):
+            return {"markdown": "# Summary\n"}
+
+    class BrokenStore:
+        def __init__(self, output_root):
+            pass
+
+        def import_legacy_run(self, run_dir_arg):
+            raise RuntimeError("import exploded")
+
+    monkeypatch.setattr(cycle, "_load_summary_module", lambda root: FakeSummaryModule)
+    monkeypatch.setattr(cycle, "ExperimentStore", BrokenStore)
+
+    report = cycle.run_cycle(tmp_path, skill="stop-slop", dry_run=False)
+    markdown = report.read_text()
+
+    assert "# Summary" in markdown
+    assert "Self-improvement Loop v0 import skipped" in markdown
+    assert "import exploded" in markdown

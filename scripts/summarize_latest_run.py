@@ -49,6 +49,11 @@ def build_summary(run_dir: Path, thresholds: dict[str, Any] | None = None) -> di
     }
     gate = _load_gate_module().classify_candidate(enriched_metrics, thresholds)
 
+    # Check for captured non-selected proposals
+    candidates_dir = run_dir / "candidates"
+    candidate_files = sorted(candidates_dir.glob("candidate_*.md")) if candidates_dir.exists() else []
+    candidate_count = len(candidate_files)
+
     markdown = f"""# Evolution Run Summary — {metrics.get('skill_name')}
 
 - Run dir: `{run_dir}`
@@ -66,10 +71,27 @@ def build_summary(run_dir: Path, thresholds: dict[str, Any] | None = None) -> di
 - Size growth: {gate['size_growth']} chars
 - Constraints passed: {metrics.get('constraints_passed')}
 - Diff lines: +{diff_stats['added_lines']} / -{diff_stats['removed_lines']}
-
-## Next action
-
+- Candidate proposals captured: {candidate_count}
 """
+
+    # Add proposal discard notice if proposals exist but artifact didn't change
+    if candidate_count > 0 and not enriched_metrics.get("artifact_changed"):
+        first_candidate = candidate_files[0].name if candidate_files else ""
+        candidates_path = candidates_dir.relative_to(run_dir.parents[1]) if candidates_dir.exists() else ""
+        markdown += (
+            f"\n## ⚠ Non-selected proposals discarded ({candidate_count})\n\n"
+            f"GEPA generated {candidate_count} instruction proposals internally, but "
+            "the optimizer selected the baseline artifact. These proposals were **not lost** — "
+            f"they are saved in `{candidates_dir}/` for human review.\n\n"
+        )
+        if candidate_count >= 1:
+            markdown += (
+                f"- Review the first candidate: `{candidates_dir / candidate_files[0].name}`\n"
+                f"- All {candidate_count} candidates available for manual inspection at `{candidates_dir}/`\n"
+                f"- To apply a candidate: copy its content into the skill's `body` section.\n"
+            )
+
+    markdown += "\n## Next action\n\n"
     if gate["status"] == "candidate":
         markdown += "Review the diff manually. If it reads well, run the PR candidate command.\n"
     elif gate["status"] == "review":
@@ -77,7 +99,13 @@ def build_summary(run_dir: Path, thresholds: dict[str, Any] | None = None) -> di
     else:
         markdown += "Reject this run. Keep it as audit data only.\n"
 
-    return {"metrics": metrics, "gate": gate, "diff_stats": diff_stats, "markdown": markdown}
+    return {
+        "metrics": metrics,
+        "gate": gate,
+        "diff_stats": diff_stats,
+        "markdown": markdown,
+        "candidate_count": candidate_count,
+    }
 
 
 def main(argv: list[str] | None = None) -> int:

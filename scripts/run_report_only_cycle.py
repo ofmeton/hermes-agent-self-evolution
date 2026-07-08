@@ -14,6 +14,8 @@ from typing import Any
 
 import yaml
 
+from evolution.core.self_improvement import ExperimentStore
+
 
 def select_target(config: dict[str, Any], skill: str | None = None) -> dict[str, Any]:
     targets = [t for t in config.get("targets", []) if t.get("enabled", False)]
@@ -91,16 +93,31 @@ def run_cycle(root: Path, skill: str | None = None, dry_run: bool = False) -> Pa
         subprocess.run(command, cwd=root, env=env, check=True)
 
     summary_module = _load_summary_module(root)
+    experiment_section = ""
     try:
         run_dir = summary_module.find_latest_run(root, selected_skill)
         markdown = summary_module.build_summary(run_dir, thresholds=defaults)["markdown"]
+        try:
+            experiment = ExperimentStore(root / "output").import_legacy_run(run_dir)
+            experiment_section = (
+                "\n## Self-improvement Loop v0\n\n"
+                f"- Experiment: `{experiment.id}`\n"
+                f"- Experiment dir: `{root / 'output' / 'experiments' / experiment.id}`\n"
+                "- Imported from legacy GEPA run for Review → Verdict → Promotion → Measure tracking.\n"
+            )
+        except Exception as exc:
+            experiment_section = (
+                "\n## Self-improvement Loop v0 import skipped\n\n"
+                f"- Reason: `{type(exc).__name__}: {exc}`\n"
+                "- The report-only summary was still saved; inspect the import issue separately.\n"
+            )
     except FileNotFoundError:
         markdown = build_failed_variant_summary(root, selected_skill)
 
     today = dt.date.today().isoformat()
     out_path = report_path(root, selected_skill, today)
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(markdown)
+    out_path.write_text(markdown + experiment_section)
     return out_path
 
 

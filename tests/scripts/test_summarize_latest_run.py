@@ -57,3 +57,37 @@ def test_build_summary_rejects_score_gain_without_artifact_change(tmp_path):
     result = summary.build_summary(run_dir)
     assert result["gate"]["status"] == "reject"
     assert "artifact_unchanged" in result["markdown"]
+
+
+def test_build_summary_lists_proposals_when_discarded(tmp_path):
+    """Candidate proposals should be reported when artifacts exist but didn't change."""
+    summary = load_summary_module()
+    run_dir = write_run(tmp_path, "demo", "20260201_000000", 0.05, changed=False)
+
+    # Write fake captured proposals
+    candidates_dir = run_dir / "candidates"
+    candidates_dir.mkdir()
+    (candidates_dir / "candidate_001.md").write_text("# Proposal 1\nImprove code review\n")
+    (candidates_dir / "candidate_002.md").write_text("# Proposal 2\nAdd security check\n")
+
+    result = summary.build_summary(run_dir)
+    assert result["candidate_count"] == 2
+    assert "Non-selected proposals" in result["markdown"]
+    assert "candidate_001.md" in result["markdown"]
+    assert "Reject this run" in result["markdown"]
+
+
+def test_build_summary_skips_proposal_notice_when_artifact_changed(tmp_path):
+    """No proposal discard notice when artifact actually changed (not a reject run)."""
+    summary = load_summary_module()
+    run_dir = write_run(tmp_path, "demo", "20260201_000000", 0.10, changed=True)
+
+    candidates_dir = run_dir / "candidates"
+    candidates_dir.mkdir()
+    (candidates_dir / "candidate_001.md").write_text("# Proposal\n")
+
+    result = summary.build_summary(run_dir)
+    # Artifact changed, so proposals should still be counted but NOT flagged as discarded
+    assert result["candidate_count"] == 1
+    assert "Non-selected proposals" not in result["markdown"]
+    assert "Candidate proposals captured" in result["markdown"]

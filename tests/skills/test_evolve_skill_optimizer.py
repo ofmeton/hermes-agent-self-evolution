@@ -109,3 +109,103 @@ def test_select_holdout_examples_limits_only_when_requested():
     assert select_holdout_examples(examples, None) == examples
     assert select_holdout_examples(examples, 0) == examples
     assert select_holdout_examples(examples, 2) == ["a", "b"]
+
+
+def test_extract_proposals_from_gepa_output():
+    from evolution.skills.evolve_skill import extract_proposals
+
+    sample = """\
+Some debug output...
+Proposed new text for predictor.predict:
+## Code Review Skill
+Review pull requests thoroughly.
+Check for:
+- Security issues
+- Performance concerns
+---
+Score: 0.520 | Size: 3,200 chars
+
+Evaluating iteration 2...
+Proposed new text for predictor.predict:
+## Code Review Skill
+Review pull requests with a focus on correctness.
+Always check the diff stat.
+---
+Score: 0.810 | Size: 3,350 chars
+
+Final selection: baseline wins
+"""
+
+    proposals = extract_proposals(sample)
+    assert len(proposals) == 2
+    assert "Code Review Skill" in proposals[0]
+    assert "focus on correctness" in proposals[1]
+    assert "Score:" not in proposals[0]
+    assert "---" not in proposals[0]
+
+
+def test_extract_proposals_empty_when_no_headers():
+    from evolution.skills.evolve_skill import extract_proposals
+
+    assert extract_proposals("Just regular log output\nNo proposals here\n") == []
+
+
+def test_extract_proposals_deduplicates():
+    from evolution.skills.evolve_skill import extract_proposals
+
+    repeated = """\
+Proposed new text for predictor.predict:
+## Same Text
+---
+Score: 0.5
+
+Proposed new text for predictor.predict:
+## Same Text
+---
+Score: 0.6
+"""
+    proposals = extract_proposals(repeated)
+    assert len(proposals) == 1
+
+
+def test_extract_proposals_respects_maximum():
+    from evolution.skills.evolve_skill import extract_proposals, MAX_PROPOSAL_CAPTURE
+
+    many = ""
+    for i in range(MAX_PROPOSAL_CAPTURE + 5):
+        many += f"""Proposed new text for predictor.predict:
+## Proposal {i}
+---
+Score: 0.5
+
+"""
+    proposals = extract_proposals(many)
+    assert len(proposals) <= MAX_PROPOSAL_CAPTURE
+
+
+def test_tee_capture_proxies_to_original_and_captures(tmp_path):
+    from evolution.skills.evolve_skill import _TeeCapture
+    import io
+
+    buf = io.StringIO()
+    tee = _TeeCapture(buf)
+
+    tee.write("hello ")
+    tee.write("world\n")
+
+    assert buf.getvalue() == "hello world\n"
+    assert tee.getvalue() == "hello world\n"
+
+
+def test_tee_capture_bounded_buffer():
+    from evolution.skills.evolve_skill import _TeeCapture
+    import io
+
+    buf = io.StringIO()
+    tee = _TeeCapture(buf)
+
+    big = "x" * (tee.MAX_BYTES + 1000)
+    tee.write(big)
+
+    assert len(tee.getvalue()) <= tee.MAX_BYTES
+    assert buf.getvalue() == big  # original stream gets everything
